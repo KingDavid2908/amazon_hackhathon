@@ -1,0 +1,81 @@
+name: Deploy to AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Resolve deployment settings
+        id: resolve
+        shell: bash
+        env:
+          EC2_HOST_SECRET: ${{ secrets.EC2_HOST }}
+          EC2_HOST_VAR: ${{ vars.EC2_HOST }}
+          AWS_EC2_HOST_SECRET: ${{ secrets.AWS_EC2_HOST }}
+          AWS_EC2_HOST_VAR: ${{ vars.AWS_EC2_HOST }}
+          SERVER_HOST_SECRET: ${{ secrets.SERVER_HOST }}
+          SERVER_HOST_VAR: ${{ vars.SERVER_HOST }}
+
+          EC2_USER_SECRET: ${{ secrets.EC2_USER }}
+          EC2_USER_VAR: ${{ vars.EC2_USER }}
+          SERVER_USER_SECRET: ${{ secrets.SERVER_USER }}
+          SERVER_USER_VAR: ${{ vars.SERVER_USER }}
+
+          EC2_PORT_SECRET: ${{ secrets.EC2_PORT }}
+          EC2_PORT_VAR: ${{ vars.EC2_PORT }}
+          SERVER_PORT_SECRET: ${{ secrets.SERVER_PORT }}
+          SERVER_PORT_VAR: ${{ vars.SERVER_PORT }}
+
+          DEPLOY_PATH_SECRET: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_PATH_VAR: ${{ vars.DEPLOY_PATH }}
+          SERVER_PATH_SECRET: ${{ secrets.SERVER_PATH }}
+          SERVER_PATH_VAR: ${{ vars.SERVER_PATH }}
+        run: |
+          set -euo pipefail
+
+          EC2_HOST="${EC2_HOST_SECRET:-${EC2_HOST_VAR:-${AWS_EC2_HOST_SECRET:-${AWS_EC2_HOST_VAR:-${SERVER_HOST_SECRET:-${SERVER_HOST_VAR:-handofai.work}}}}}}"
+          EC2_USER="${EC2_USER_SECRET:-${EC2_USER_VAR:-${SERVER_USER_SECRET:-${SERVER_USER_VAR:-ubuntu}}}}"
+          EC2_PORT="${EC2_PORT_SECRET:-${EC2_PORT_VAR:-${SERVER_PORT_SECRET:-${SERVER_PORT_VAR:-22}}}}"
+          DEPLOY_PATH="${DEPLOY_PATH_SECRET:-${DEPLOY_PATH_VAR:-${SERVER_PATH_SECRET:-${SERVER_PATH_VAR:-/var/www/amazon_hackhathon}}}}"
+
+          echo "Using host=$EC2_HOST user=$EC2_USER port=$EC2_PORT path=$DEPLOY_PATH"
+
+          echo "ec2_host=$EC2_HOST" >> "$GITHUB_OUTPUT"
+          echo "ec2_user=$EC2_USER" >> "$GITHUB_OUTPUT"
+          echo "ec2_port=$EC2_PORT" >> "$GITHUB_OUTPUT"
+          echo "deploy_path=$DEPLOY_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_PATH: ${{ steps.resolve.outputs.deploy_path }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          DAYTONA_SERVER_URL: ${{ secrets.DAYTONA_SERVER_URL }}
+          DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET }}
+          APP_SERVICE_NAME: ${{ secrets.APP_SERVICE_NAME }}
+        with:
+          host: ${{ steps.resolve.outputs.ec2_host }}
+          username: ${{ steps.resolve.outputs.ec2_user }}
+          key: ${{ secrets.EC2_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
+          port: ${{ steps.resolve.outputs.ec2_port }}
+          script_stop: true
+          envs: DEPLOY_PATH,DAYTONA_API_KEY,DAYTONA_SERVER_URL,DAYTONA_TARGET,APP_SERVICE_NAME
+          script: |
+            set -e
+            cd "$DEPLOY_PATH"
+            cat > .env.production <<ENVVARS
+            DAYTONA_API_KEY=$DAYTONA_API_KEY
+            DAYTONA_SERVER_URL=$DAYTONA_SERVER_URL
+            DAYTONA_TARGET=$DAYTONA_TARGET
+            ENVIRONMENT=production
+            ENVVARS
+            if [ -n "$APP_SERVICE_NAME" ]; then
+              export APP_SERVICE_NAME
+            fi
+            chmod +x scripts/deploy.sh
+            DEPLOY_PATH="$DEPLOY_PATH" scripts/deploy.sh
