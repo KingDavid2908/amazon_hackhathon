@@ -10,19 +10,49 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Resolve deployment settings
+        id: resolve
+        shell: bash
+        env:
+          EC2_HOST_SECRET: ${{ secrets.EC2_HOST }}
+          EC2_HOST_VAR: ${{ vars.EC2_HOST }}
+          EC2_USER_SECRET: ${{ secrets.EC2_USER }}
+          EC2_USER_VAR: ${{ vars.EC2_USER }}
+          EC2_PORT_SECRET: ${{ secrets.EC2_PORT }}
+          EC2_PORT_VAR: ${{ vars.EC2_PORT }}
+          DEPLOY_PATH_SECRET: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_PATH_VAR: ${{ vars.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+
+          EC2_HOST="${EC2_HOST_SECRET:-${EC2_HOST_VAR:-}}"
+          EC2_USER="${EC2_USER_SECRET:-${EC2_USER_VAR:-ubuntu}}"
+          EC2_PORT="${EC2_PORT_SECRET:-${EC2_PORT_VAR:-22}}"
+          DEPLOY_PATH="${DEPLOY_PATH_SECRET:-${DEPLOY_PATH_VAR:-/var/www/amazon_hackhathon}}"
+
+          if [ -z "$EC2_HOST" ]; then
+            echo "Missing EC2 host. Set repository secret EC2_HOST (recommended) or repository variable EC2_HOST."
+            exit 1
+          fi
+
+          echo "ec2_host=$EC2_HOST" >> "$GITHUB_OUTPUT"
+          echo "ec2_user=$EC2_USER" >> "$GITHUB_OUTPUT"
+          echo "ec2_port=$EC2_PORT" >> "$GITHUB_OUTPUT"
+          echo "deploy_path=$DEPLOY_PATH" >> "$GITHUB_OUTPUT"
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
         env:
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_PATH: ${{ steps.resolve.outputs.deploy_path }}
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           DAYTONA_SERVER_URL: ${{ secrets.DAYTONA_SERVER_URL }}
           DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET }}
           APP_SERVICE_NAME: ${{ secrets.APP_SERVICE_NAME }}
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
+          host: ${{ steps.resolve.outputs.ec2_host }}
+          username: ${{ steps.resolve.outputs.ec2_user }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          port: ${{ secrets.EC2_PORT }}
+          port: ${{ steps.resolve.outputs.ec2_port }}
           script_stop: true
           envs: DEPLOY_PATH,DAYTONA_API_KEY,DAYTONA_SERVER_URL,DAYTONA_TARGET,APP_SERVICE_NAME
           script: |
