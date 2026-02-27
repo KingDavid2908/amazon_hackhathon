@@ -1,0 +1,41 @@
+name: Deploy to AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          DAYTONA_SERVER_URL: ${{ secrets.DAYTONA_SERVER_URL }}
+          DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET }}
+          APP_SERVICE_NAME: ${{ secrets.APP_SERVICE_NAME }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_PORT }}
+          script_stop: true
+          envs: DEPLOY_PATH,DAYTONA_API_KEY,DAYTONA_SERVER_URL,DAYTONA_TARGET,APP_SERVICE_NAME
+          script: |
+            set -e
+            cd "$DEPLOY_PATH"
+            cat > .env.production <<ENVVARS
+            DAYTONA_API_KEY=$DAYTONA_API_KEY
+            DAYTONA_SERVER_URL=$DAYTONA_SERVER_URL
+            DAYTONA_TARGET=$DAYTONA_TARGET
+            ENVIRONMENT=production
+            ENVVARS
+            if [ -n "$APP_SERVICE_NAME" ]; then
+              export APP_SERVICE_NAME
+            fi
+            chmod +x scripts/deploy.sh
+            DEPLOY_PATH="$DEPLOY_PATH" scripts/deploy.sh
